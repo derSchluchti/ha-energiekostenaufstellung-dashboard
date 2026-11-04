@@ -1,0 +1,14 @@
+{
+  "name": "energiekosten-panel",
+  "version": "1.0.0",
+  "description": "Panel für ha-energiekostenaufstellung-dashboard",
+  "scripts": {
+    "build": "esbuild src/panel.js --bundle --format=esm --minify --target=es2021 --outfile=../custom_components/energiekostenaufstellung/www/energiekosten-panel.js"
+  },
+  "license": "ISC",
+  "devDependencies": {
+    "esbuild": "^0.28.2",
+    "lit": "^3.3.3"
+  },
+  "private": true
+}

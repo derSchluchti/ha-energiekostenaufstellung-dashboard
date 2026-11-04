@@ -1,0 +1,13 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Energiekostenaufstellung",
+        "description": "Richtet das Panel „Energiekosten“ in der Seitenleiste ein. Tarif und Geräte stellst du danach im Panel unter „Einstellungen“ ein."
+      }
+    },
+    "abort": {
+      "single_instance_allowed": "Die Energiekostenaufstellung ist bereits eingerichtet."
+    }
+  }
+}
