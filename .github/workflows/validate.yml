@@ -27,7 +27,11 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
-      - run: pip install pytest-homeassistant-custom-component
+      - name: Abhängigkeiten
+        run: |
+          pip install pytest-homeassistant-custom-component
+          FE=$(python -c "import json,homeassistant.components.frontend as f,pathlib;print([r for r in json.loads((pathlib.Path(f.__file__).parent/'manifest.json').read_text())['requirements'] if r.startswith('home-assistant-frontend')][0])")
+          pip install "$FE"
       - run: python -m pytest -q
 
   frontend:
