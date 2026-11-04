@@ -26,12 +26,27 @@ from .store import SettingsStore
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 _STATIC_REGISTERED = f"{DOMAIN}_static_registered"
-_CARD_URL = f"{DOMAIN}_card_url"
 
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     websocket_api.async_register(hass)
+    # Kachel so früh wie möglich registrieren, damit sie in jedem neu geladenen
+    # Frontend verfügbar ist (auch wenn der Config-Entry erst später startet).
+    integration = await async_get_integration(hass, DOMAIN)
+    await _async_register_static(hass)
+    frontend.add_extra_js_url(
+        hass, f"{STATIC_URL}/energiekosten-card.js?v={integration.version}"
+    )
     return True
+
+
+async def _async_register_static(hass: HomeAssistant) -> None:
+    if hass.data.get(_STATIC_REGISTERED):
+        return
+    await hass.http.async_register_static_paths(
+        [StaticPathConfig(STATIC_URL, str(Path(__file__).parent / "www"), False)]
+    )
+    hass.data[_STATIC_REGISTERED] = True
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -39,16 +54,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await store.async_load()
     hass.data[DOMAIN] = store
 
-    if not hass.data.get(_STATIC_REGISTERED):
-        await hass.http.async_register_static_paths(
-            [StaticPathConfig(STATIC_URL, str(Path(__file__).parent / "www"), False)]
-        )
-        hass.data[_STATIC_REGISTERED] = True
-
+    await _async_register_static(hass)
     integration = await async_get_integration(hass, DOMAIN)
-    card_url = f"{STATIC_URL}/energiekosten-card.js?v={integration.version}"
-    frontend.add_extra_js_url(hass, card_url)
-    hass.data[_CARD_URL] = card_url
     await panel_custom.async_register_panel(
         hass,
         frontend_url_path=PANEL_URL_PATH,
@@ -64,7 +71,5 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     frontend.async_remove_panel(hass, PANEL_URL_PATH, warn_if_unknown=False)
-    if card_url := hass.data.pop(_CARD_URL, None):
-        frontend.remove_extra_js_url(hass, card_url)
     hass.data.pop(DOMAIN, None)
     return True
