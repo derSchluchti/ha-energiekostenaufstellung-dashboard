@@ -228,12 +228,23 @@ class EkdSettings extends LitElement {
     `;
   }
 
+  _actions() {
+    return html`<div class="actions">
+      <button class="primary" ?disabled=${!this._dirty} @click=${this._save}>Speichern</button>
+      <button ?disabled=${!this._dirty} @click=${this._load}>Verwerfen</button>
+      ${this._dirty ? html`<span class="muted">Ungespeicherte Änderungen</span>` : nothing}
+      ${this._msg ? html`<span class=${this._msg.error ? "err" : "ok"}>${this._msg.text}</span>` : nothing}
+    </div>`;
+  }
+
   render() {
     if (!this._s) return html`${this._msg ? html`<div class="warn">${this._msg.text}</div>` : html`lädt …`}`;
     const ro = this._ro;
     const s = this._s;
     return html`
-      ${ro ? html`<div class="info">Nur Administratoren können die Einstellungen ändern.</div>` : nothing}
+      ${ro
+        ? html`<div class="info">Nur Administratoren können die Einstellungen ändern (angemeldet als: ${this.hass?.user?.name ?? "?"}).</div>`
+        : this._actions()}
 
       <section>
         <h3>Tarif</h3>
@@ -281,18 +292,13 @@ class EkdSettings extends LitElement {
         <div class="muted small">Die Umschalter in der Übersicht merken sich pro Benutzer die eigene Wahl.</div>
       </section>
 
-      ${ro
-        ? nothing
-        : html`<div class="savebar">
-            <button class="primary" ?disabled=${!this._dirty} @click=${this._save}>Speichern</button>
-            <button ?disabled=${!this._dirty} @click=${this._load}>Verwerfen</button>
-            ${this._msg ? html`<span class=${this._msg.error ? "err" : "ok"}>${this._msg.text}</span>` : nothing}
-          </div>`}
+      ${ro ? nothing : this._actions()}
+
     `;
   }
 
   static styles = css`
-    :host { display: block; padding-bottom: 72px; }
+    :host { display: block; }
     section {
       background: var(--card-background-color); border: 1px solid var(--divider-color);
       border-radius: var(--ha-card-border-radius, 12px); padding: 8px 16px 16px; margin-bottom: 16px;
@@ -330,10 +336,10 @@ class EkdSettings extends LitElement {
     .small { font-size: 12px; }
     .info { background: var(--info-color, #039be5); color: #fff; padding: 8px 12px; border-radius: 8px; margin-bottom: 12px; }
     .warn { background: var(--warning-color, #ffa600); color: #000; padding: 8px 12px; border-radius: 8px; }
-    .savebar {
-      position: fixed; bottom: 0; right: 0; left: var(--mdc-drawer-width, 0); padding: 12px 24px;
-      background: var(--app-header-background-color, var(--primary-background-color));
-      border-top: 1px solid var(--divider-color); display: flex; gap: 12px; align-items: center;
+    .actions {
+      display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin: 0 0 16px;
+      padding: 10px 16px; border: 1px solid var(--divider-color); border-radius: var(--ha-card-border-radius, 12px);
+      background: var(--card-background-color);
     }
     .ok { color: var(--success-color, #43a047); }
     .err { color: var(--error-color, #db4437); }
