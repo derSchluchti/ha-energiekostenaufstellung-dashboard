@@ -18,6 +18,7 @@ class EnergiekostenCard extends LitElement {
     _config: { state: true },
     _data: { state: true },
     _error: { state: true },
+    _period: { state: true },
   };
 
   static async getStubConfig(hass) {
@@ -35,9 +36,35 @@ class EnergiekostenCard extends LitElement {
 
   setConfig(config) {
     if (!config) throw new Error("Ungültige Konfiguration");
-    this._config = { period: "month", show_chart: true, ...config };
+    this._config = { period: "month", show_chart: true, period_selector: true, ...config };
+    this._period = this._storedPeriod() || this._config.period;
     this._loadedFor = null;
     if (this.hass) this._load();
+  }
+
+  get _storeKey() {
+    return `energiekosten-card:${this._config.stat_id}:${this._config.period}`;
+  }
+
+  _storedPeriod() {
+    try {
+      const v = window.localStorage.getItem(this._storeKey);
+      return PERIODS.some((p) => p.id === v) ? v : null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  _selectPeriod(ev, id) {
+    ev.stopPropagation();
+    if (id === this._period) return;
+    this._period = id;
+    try {
+      window.localStorage.setItem(this._storeKey, id);
+    } catch (e) {
+      /* ohne Speicher weiter */
+    }
+    this._load(true);
   }
 
   getCardSize() {
@@ -59,27 +86,28 @@ class EnergiekostenCard extends LitElement {
   }
 
   updated(changed) {
-    if (changed.has("hass") && this.hass && this._config && this._loadedFor !== JSON.stringify(this._config)) {
+    if (changed.has("hass") && this.hass && this._config && this._loadedFor !== JSON.stringify(this._config) + this._period) {
       this._load();
     }
   }
 
   async _load(force = false) {
     if (!this.hass || !this._config) return;
-    const key = JSON.stringify(this._config);
+    const key = JSON.stringify(this._config) + this._period;
     if (!force && this._loadedFor === key) return;
     this._loadedFor = key;
     if (!this._config.stat_id) {
       this._error = "Bitte ein Gerät auswählen.";
       return;
     }
-    const { start, end } = periodRange(this._config.period, new Date());
+    const period = this._period;
+    const { start, end } = periodRange(period, new Date());
     try {
       const r = await this.hass.callWS({
         type: `${DOMAIN}/report`,
         start: start.toISOString(),
         end: end.toISOString(),
-        bucket: BUCKET[this._config.period],
+        bucket: BUCKET[period],
         stat_ids: [this._config.stat_id],
       });
       const dev = r.devices[0];
@@ -88,7 +116,8 @@ class EnergiekostenCard extends LitElement {
         this._data = null;
         return;
       }
-      this._data = { r, dev, start, end };
+      if (period !== this._period) return; // inzwischen umgeschaltet
+      this._data = { r, dev, start, end, period };
       this._error = null;
     } catch (e) {
       this._error = e?.message || String(e);
@@ -115,14 +144,23 @@ class EnergiekostenCard extends LitElement {
         <div class="head">
           <span class="dot" style="background:${color}"></span>
           <span class="name">${name}</span>
-          <span class="period">${d ? periodLabel(c.period, d.start, d.end) : PERIOD_NOUN[c.period]}</span>
+          ${c.period_selector
+            ? html`<span class="seg">
+                ${PERIODS.map(
+                  (p) => html`<button class=${p.id === this._period ? "on" : ""} title=${p.label}
+                    @click=${(ev) => this._selectPeriod(ev, p.id)}>${p.label[0]}</button>`
+                )}
+              </span>`
+            : html`<span class="period">${d ? periodLabel(d.period, d.start, d.end) : PERIOD_NOUN[this._period]}</span>`}
         </div>
         ${this._error
           ? html`<div class="err">${this._error}</div>`
           : html`<div class="vals">
               <span class="cost">${fmtEur(cost)}</span>
               <span class="kwh">${d ? fmtKwh(d.dev.cost.kwh) : ""}</span>
-              <span class="hint">${gross ? "brutto" : "netto"}</span>
+              <span class="hint">
+                ${c.period_selector && d ? html`${periodLabel(d.period, d.start, d.end)} · ` : nothing}${gross ? "brutto" : "netto"}
+              </span>
             </div>
             ${c.show_chart && series
               ? html`<ekd-stacked-chart compact .height=${56} .keys=${series.keys} .bucket=${series.bucket}
@@ -141,7 +179,13 @@ class EnergiekostenCard extends LitElement {
     .vals { display: flex; align-items: baseline; gap: 10px; margin: 6px 0 4px; }
     .cost { font-size: 26px; font-weight: 500; font-variant-numeric: tabular-nums; }
     .kwh { color: var(--secondary-text-color); font-size: 13px; }
-    .hint { margin-left: auto; color: var(--secondary-text-color); font-size: 11px; }
+    .hint { margin-left: auto; color: var(--secondary-text-color); font-size: 11px; white-space: nowrap; }
+    .seg { margin-left: auto; display: inline-flex; border: 1px solid var(--divider-color); border-radius: 12px; overflow: hidden; flex: none; }
+    .seg button {
+      border: none; background: transparent; color: var(--secondary-text-color); font: inherit; font-size: 12px;
+      padding: 2px 8px; cursor: pointer; min-width: 26px;
+    }
+    .seg button.on { background: var(--primary-color); color: var(--text-primary-color, #fff); }
     ekd-stacked-chart { margin-top: auto; }
     .err { color: var(--error-color, #db4437); font-size: 13px; padding: 8px 0; }
   `;
@@ -184,6 +228,7 @@ class EnergiekostenCardEditor extends LitElement {
         name: "period",
         selector: { select: { mode: "dropdown", options: PERIODS.map((p) => ({ value: p.id, label: p.label })) } },
       },
+      { name: "period_selector", selector: { boolean: {} } },
       { name: "show_chart", selector: { boolean: {} } },
       { name: "gross", selector: { boolean: {} } },
     ];
@@ -193,7 +238,8 @@ class EnergiekostenCardEditor extends LitElement {
     ({
       stat_id: "Gerät",
       name: "Name (optional)",
-      period: "Zeitraum (laufend)",
+      period: "Standard-Zeitraum (laufend)",
+      period_selector: "Zeitraum in der Kachel umschaltbar (T/W/M/J)",
       show_chart: "Mini-Verlauf anzeigen",
       gross: "Brutto (inkl. USt)",
     })[s.name] ?? s.name;
@@ -207,7 +253,7 @@ class EnergiekostenCardEditor extends LitElement {
 
   render() {
     if (!this.hass || !this._config) return nothing;
-    const data = { period: "month", show_chart: true, gross: true, ...this._config };
+    const data = { period: "month", show_chart: true, period_selector: true, gross: true, ...this._config };
     return html`<ha-form .hass=${this.hass} .data=${data} .schema=${this._schema()}
       .computeLabel=${this._label} @value-changed=${this._changed}></ha-form>`;
   }

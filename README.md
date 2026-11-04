@@ -35,7 +35,8 @@ Nach der Installation steht im Kartenauswahl-Dialog **„Energiekosten Gerät“
 ```yaml
 type: custom:energiekosten-card
 stat_id: sensor.kaffeemaschine_energy
-period: month        # day | week | month | year
+period: month        # Standard: day | week | month | year
+period_selector: true  # T/W/M/J direkt in der Kachel umschalten
 show_chart: true
 gross: true          # optional, sonst Standard aus den Einstellungen
 name: Kaffee         # optional
