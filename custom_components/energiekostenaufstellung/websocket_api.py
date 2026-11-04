@@ -37,6 +37,8 @@ def _store(hass: HomeAssistant) -> SettingsStore | None:
         vol.Required("type"): f"{DOMAIN}/report",
         vol.Required("start"): str,
         vol.Required("end"): str,
+        vol.Optional("bucket"): vol.In(["hour", "day", "month"]),
+        vol.Optional("stat_ids"): [str],
     }
 )
 @websocket_api.async_response
@@ -54,7 +56,9 @@ async def ws_report(
         return
     start = dt_util.as_utc(start)
     end = dt_util.as_utc(end)
-    report = await async_build_report(hass, store.data, start, end)
+    report = await async_build_report(
+        hass, store.data, start, end, msg.get("bucket"), msg.get("stat_ids")
+    )
     connection.send_result(msg["id"], report)
 
 

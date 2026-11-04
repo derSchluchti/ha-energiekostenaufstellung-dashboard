@@ -1,4 +1,5 @@
 import { LitElement, html, css, nothing } from "lit";
+import "./charts.js";
 import {
   PERIODS,
   CATEGORIES,
@@ -70,17 +71,20 @@ class EkdOverview extends LitElement {
   }
 
   get _effectiveDisplay() {
-    return this._display ?? this._report?.display ?? { gross: true, breakdown: true, projection: false };
+    const base = this._display ?? this._report?.display ?? { gross: true, breakdown: true, projection: false };
+    return { charts: true, chartUnit: "eur", ...base };
   }
 
   async refresh() {
     const { start, end } = periodRange(this._period, this._anchor);
     this._loading = true;
     try {
+      const bucket = { day: "hour", week: "day", month: "day", year: "month" }[this._period];
       this._report = await this.hass.callWS({
         type: `${DOMAIN}/report`,
         start: start.toISOString(),
         end: end.toISOString(),
+        bucket,
       });
       this._error = null;
     } catch (e) {
@@ -105,6 +109,61 @@ class EkdOverview extends LitElement {
   _today() {
     this._anchor = new Date();
     this.refresh();
+  }
+
+  _setChartUnit(unit) {
+    this._display = { ...this._effectiveDisplay, chartUnit: unit };
+    this._saveUserDisplay();
+  }
+
+  _renderCharts() {
+    const r = this._report;
+    const s = r.series;
+    if (!s) return nothing;
+    const disp = this._effectiveDisplay;
+    const unit = disp.chartUnit;
+    const idx = unit === "kwh" ? 2 : disp.gross ? 0 : 1;
+    const REST = "#7a7a7a";
+    const FIX = "#4a4a4a";
+    const stacks = r.devices.map((d) => ({
+      name: d.name,
+      color: d.color,
+      values: (s.devices[d.stat_id] || []).map((v) => v[idx]),
+    }));
+    stacks.push({ name: "Nicht erfasst", color: REST, values: s.rest.map((v) => v[idx]) });
+
+    const val = (c) => (unit === "kwh" ? c.kwh : disp.gross ? c.gross : c.net);
+    const items = r.devices.map((d) => ({ name: d.name, color: d.color, value: val(d.cost) }));
+    const money = (c) => (disp.gross ? c.gross : c.net);
+    const fixed = r.fixed.reduce((a, l) => a + (disp.gross ? l.gross : l.net), 0);
+    const donut = [
+      ...r.devices.map((d) => ({ name: d.name, color: d.color, value: money(d.cost) })),
+      { name: "Nicht erfasst", color: REST, value: Math.max(0, money(r.rest.cost)) },
+      { name: "Fixkosten", color: FIX, value: fixed },
+    ];
+    const tUnit = unit === "kwh" ? "Verbrauch" : disp.gross ? "Kosten brutto" : "Kosten netto";
+    return html`
+      <div class="card chart">
+        <div class="chead">
+          <h3>Verlauf · ${tUnit}</h3>
+          <div class="seg small">
+            <button class=${unit === "eur" ? "on" : ""} @click=${() => this._setChartUnit("eur")}>€</button>
+            <button class=${unit === "kwh" ? "on" : ""} @click=${() => this._setChartUnit("kwh")}>kWh</button>
+          </div>
+        </div>
+        <ekd-stacked-chart .keys=${s.keys} .bucket=${s.bucket} .stacks=${stacks} .unit=${unit}></ekd-stacked-chart>
+      </div>
+      <div class="grid2">
+        <div class="card chart">
+          <h3>Aufteilung ${disp.gross ? "brutto" : "netto"}</h3>
+          <ekd-donut .segments=${donut} unit="eur" label="inkl. Fixkosten"></ekd-donut>
+        </div>
+        <div class="card chart">
+          <h3>Geräte-Vergleich · ${tUnit}</h3>
+          <ekd-hbars .items=${items} .unit=${unit}></ekd-hbars>
+        </div>
+      </div>
+    `;
   }
 
   _toggle(key) {
@@ -313,10 +372,12 @@ class EkdOverview extends LitElement {
         </div>
         <label><input type="checkbox" .checked=${disp.breakdown} @change=${() => this._toggle("breakdown")} /> Aufschlüsselung</label>
         <label><input type="checkbox" .checked=${disp.projection} @change=${() => this._toggle("projection")} /> Hochrechnung</label>
+        <label><input type="checkbox" .checked=${disp.charts} @change=${() => this._toggle("charts")} /> Diagramme</label>
         ${this._loading ? html`<span class="muted">lädt …</span>` : nothing}
       </div>
       ${this._error ? html`<div class="warn">Fehler: ${this._error}</div>` : nothing}
       ${r?.warnings?.map((w) => html`<div class="warn">${w}</div>`)}
+      ${r && disp.charts ? this._renderCharts() : nothing}
       ${r ? html`<div class="card">${this._renderTable()}</div>` : nothing}
       ${r && disp.projection && !r.period.is_current
         ? html`<div class="muted small">Hochrechnung gibt es nur für den laufenden Zeitraum.</div>`
@@ -343,8 +404,16 @@ class EkdOverview extends LitElement {
     label { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
     .card {
       background: var(--card-background-color); border-radius: var(--ha-card-border-radius, 12px);
-      border: 1px solid var(--divider-color); overflow-x: auto;
+      border: 1px solid var(--divider-color); overflow-x: auto; margin-bottom: 16px;
     }
+    .card.chart { padding: 12px 16px 14px; overflow: visible; }
+    .card h3 { margin: 0 0 10px; font-size: 16px; font-weight: 500; }
+    .chead { display: flex; align-items: center; justify-content: space-between; }
+    .chead h3 { margin: 0; }
+    .seg.small button { padding: 3px 12px; }
+    .grid2 { display: grid; grid-template-columns: minmax(300px, 1fr) 2fr; gap: 16px; }
+    .grid2 .card { margin-bottom: 16px; }
+    @media (max-width: 900px) { .grid2 { grid-template-columns: 1fr; } }
     table { width: 100%; border-collapse: collapse; font-size: 14px; }
     th, td { padding: 8px 12px; border-bottom: 1px solid var(--divider-color); white-space: nowrap; }
     th { text-align: left; font-weight: 500; color: var(--secondary-text-color); }
@@ -368,4 +437,4 @@ class EkdOverview extends LitElement {
   `;
 }
 
-customElements.define("ekd-overview", EkdOverview);
+if (!customElements.get("ekd-overview")) customElements.define("ekd-overview", EkdOverview);

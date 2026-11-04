@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "description": "Panel für ha-energiekostenaufstellung-dashboard",
   "scripts": {
-    "build": "esbuild src/panel.js --bundle --format=esm --minify --target=es2021 --outfile=../custom_components/energiekostenaufstellung/www/energiekosten-panel.js"
+    "build": "esbuild src/panel.js src/card.js --bundle --format=esm --minify --target=es2021 --entry-names=energiekosten-[name] --outdir=../custom_components/energiekostenaufstellung/www"
   },
   "license": "ISC",
   "devDependencies": {

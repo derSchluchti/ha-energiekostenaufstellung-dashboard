@@ -9,6 +9,8 @@ Eigenes Panel „Energiekosten“ in der Seitenleiste: Was kostet jedes Gerät �
 - Zeile **„Nicht erfasst“** = Netzbezug minus Geräte (Unterzähler werden nicht doppelt gezählt).
 - Zeiträume Tag / Woche / Monat / Jahr, Netto/Brutto-Umschalter, optionale Hochrechnung.
 - Gruppierung nach Stockwerk, Bereich oder eigenen Gruppen.
+- Diagramme: Verlauf gestapelt (€ oder kWh), Aufteilung inkl. Fixkosten, Geräte-Vergleich.
+- **Kachel „Energiekosten Gerät“** für beliebige Dashboards.
 
 ## Installation über HACS
 
@@ -25,6 +27,19 @@ Alle Preise **netto**: variable Positionen in ct/kWh, Fixkosten in €/Jahr (wer
 Für EVN-Kunden in Niederösterreich gibt es den Button „Beispiel einfügen“ mit den Preisen von „Optima Garant Sonne“ und Netz NÖ (Stand 2026) – vor dem Speichern mit der eigenen Rechnung abgleichen.
 
 Preisänderung? Neue Tarifversion mit dem Gültig-ab-Datum anlegen. Ältere Zeiträume werden weiter mit dem alten Tarif berechnet.
+
+## Kachel für andere Dashboards
+
+Nach der Installation steht im Kartenauswahl-Dialog **„Energiekosten Gerät“** zur Verfügung (kein extra Ressourcen-Eintrag nötig). Zeigt die Kosten eines Geräts im laufenden Tag/Woche/Monat/Jahr samt kWh und Mini-Verlauf; Klick öffnet das Panel.
+
+```yaml
+type: custom:energiekosten-card
+stat_id: sensor.kaffeemaschine_energy
+period: month        # day | week | month | year
+show_chart: true
+gross: true          # optional, sonst Standard aus den Einstellungen
+name: Kaffee         # optional
+```
 
 ## Voraussetzungen
 

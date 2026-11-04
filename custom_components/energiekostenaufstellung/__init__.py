@@ -26,6 +26,7 @@ from .store import SettingsStore
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 _STATIC_REGISTERED = f"{DOMAIN}_static_registered"
+_CARD_URL = f"{DOMAIN}_card_url"
 
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
@@ -45,6 +46,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         hass.data[_STATIC_REGISTERED] = True
 
     integration = await async_get_integration(hass, DOMAIN)
+    card_url = f"{STATIC_URL}/energiekosten-card.js?v={integration.version}"
+    frontend.add_extra_js_url(hass, card_url)
+    hass.data[_CARD_URL] = card_url
     await panel_custom.async_register_panel(
         hass,
         frontend_url_path=PANEL_URL_PATH,
@@ -60,5 +64,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     frontend.async_remove_panel(hass, PANEL_URL_PATH, warn_if_unknown=False)
+    if card_url := hass.data.pop(_CARD_URL, None):
+        frontend.remove_extra_js_url(hass, card_url)
     hass.data.pop(DOMAIN, None)
     return True

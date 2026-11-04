@@ -61,6 +61,60 @@ async def async_hourly_changes(
     return result
 
 
+BUCKETS = ("hour", "day", "month")
+
+
+def _bucket_start(local: datetime, bucket: str) -> datetime:
+    if bucket == "hour":
+        return local.replace(minute=0, second=0, microsecond=0)
+    if bucket == "day":
+        return local.replace(hour=0, minute=0, second=0, microsecond=0)
+    return local.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+
+
+def _bucket_keys(start: datetime, end: datetime, bucket: str, tz: ZoneInfo) -> list[datetime]:
+    """Lokale Startzeitpunkte aller Buckets im Zeitraum [start, end)."""
+    keys: list[datetime] = []
+    if bucket == "hour":
+        cur = _floor_hour(start.astimezone(timezone.utc))
+        while cur < end:
+            keys.append(cur.astimezone(tz))
+            cur += HOUR
+        return keys
+    cur = _bucket_start(start.astimezone(tz), bucket)
+    while cur < end:
+        keys.append(cur)
+        if bucket == "day":
+            nxt = cur.date() + timedelta(days=1)
+            cur = datetime(nxt.year, nxt.month, nxt.day, tzinfo=tz)
+        else:
+            y, m = (cur.year + 1, 1) if cur.month == 12 else (cur.year, cur.month + 1)
+            cur = datetime(y, m, 1, tzinfo=tz)
+    return keys
+
+
+def _series(
+    hourly: list[tuple[datetime, float]],
+    keys: list[datetime],
+    bucket: str,
+    tariff: Tariff,
+    tz: ZoneInfo,
+) -> list[CostResult]:
+    index = {k: i for i, k in enumerate(keys)}
+    grouped: list[list[tuple[datetime, float]]] = [[] for _ in keys]
+    for start, kwh in hourly:
+        key = _bucket_start(start.astimezone(tz), bucket)
+        i = index.get(key)
+        if i is not None:
+            grouped[i].append((start, kwh))
+    return [variable_cost(g, tariff, tz) for g in grouped]
+
+
+def _compact(results: list[CostResult]) -> list[list[float]]:
+    """[brutto, netto, kWh] je Bucket."""
+    return [[round(r.gross_total, 5), round(r.net_total, 5), round(r.kwh, 4)] for r in results]
+
+
 def _cost_dict(res: CostResult) -> dict[str, float]:
     return {k: round(v, 6) for k, v in res.as_dict().items()}
 
@@ -70,6 +124,8 @@ async def async_build_report(
     settings: dict[str, Any],
     start: datetime,
     end: datetime,
+    bucket: str | None = None,
+    only: list[str] | None = None,
 ) -> dict[str, Any]:
     tz = ZoneInfo(hass.config.time_zone)
     now = dt_util.utcnow()
@@ -78,6 +134,11 @@ async def async_build_report(
     grid_stat = settings.get("grid_stat") or grid_stat_from_prefs(prefs)
     devices = await async_resolve_devices(hass, settings, prefs)
     active: list[Device] = [d for d in devices if not d.ignored]
+    if only is not None:
+        # Kachel-Modus: nur die angefragten Geräte, kein Netzbezug
+        wanted = set(only)
+        active = [d for d in devices if d.stat_id in wanted]
+        grid_stat = None
 
     calc_end = min(end, now)
     is_current = start <= now < end
@@ -88,7 +149,7 @@ async def async_build_report(
     warnings: list[str] = []
     if not tariff.versions:
         warnings.append("Noch kein Tarif hinterlegt – bitte unter Einstellungen eintragen.")
-    if grid_stat is None:
+    if grid_stat is None and only is None:
         warnings.append("Kein Netzbezug gefunden – im HA-Energie-Dashboard oder in den Einstellungen festlegen.")
 
     stat_ids = {d.stat_id for d in active}
@@ -151,7 +212,36 @@ async def async_build_report(
             }
         )
 
+    series = None
+    if bucket in BUCKETS:
+        keys = _bucket_keys(start, end, bucket, tz)
+        dev_series = {
+            d.stat_id: _series(hourly.get(d.stat_id, []), keys, bucket, tariff, tz) for d in active
+        }
+        total_series = (
+            _series(hourly.get(grid_stat, []), keys, bucket, tariff, tz)
+            if grid_stat
+            else [CostResult() for _ in keys]
+        )
+        rest_series = []
+        for i, tot in enumerate(total_series):
+            r = CostResult()
+            r.add(tot)
+            for dev in active:
+                if dev.included_in_stat and dev.included_in_stat in active_ids:
+                    continue
+                r.add(dev_series[dev.stat_id][i], -1.0)
+            rest_series.append(r)
+        series = {
+            "bucket": bucket,
+            "keys": [k.isoformat() for k in keys],
+            "devices": {sid: _compact(v) for sid, v in dev_series.items()},
+            "total": _compact(total_series),
+            "rest": _compact(rest_series),
+        }
+
     return {
+        "series": series,
         "period": {
             "start": start.isoformat(),
             "end": end.isoformat(),

@@ -71,6 +71,9 @@ async def test_panel_registered(hass: HomeAssistant, setup_integration):
     assert PANEL_URL_PATH in hass.data["frontend_panels"]
     panel = hass.data["frontend_panels"][PANEL_URL_PATH]
     assert panel.require_admin is False
+    from homeassistant.components.frontend import DATA_EXTRA_MODULE_URL
+
+    assert any("energiekosten-card.js" in u for u in hass.data[DATA_EXTRA_MODULE_URL].urls)
 
 
 async def test_report(hass: HomeAssistant, setup_integration, hass_ws_client):
@@ -143,6 +146,39 @@ async def test_report(hass: HomeAssistant, setup_integration, hass_ws_client):
 
     assert len(r["fixed"]) == 1
     assert r["fixed"][0]["gross"] == pytest.approx(0.12)
+    assert r["series"] is None
+
+    # Verlauf je Stunde
+    await client.send_json_auto_id(
+        {
+            "type": f"{DOMAIN}/report",
+            "start": day.isoformat(),
+            "end": (day + timedelta(days=1)).isoformat(),
+            "bucket": "hour",
+        }
+    )
+    msg = await client.receive_json()
+    s = msg["result"]["series"]
+    assert len(s["keys"]) == 24
+    assert s["devices"]["sensor.geraet_a"][5][2] == pytest.approx(1.0)
+    assert s["devices"]["sensor.geraet_a"][5][0] == pytest.approx(0.16 * 1.2)
+    assert s["rest"][5][2] == pytest.approx(2.0)
+
+    # Kachel-Modus: nur ein Gerät, Tagesbuckets
+    await client.send_json_auto_id(
+        {
+            "type": f"{DOMAIN}/report",
+            "start": day.isoformat(),
+            "end": (day + timedelta(days=1)).isoformat(),
+            "bucket": "day",
+            "stat_ids": ["sensor.geraet_b"],
+        }
+    )
+    msg = await client.receive_json()
+    r = msg["result"]
+    assert [d["stat_id"] for d in r["devices"]] == ["sensor.geraet_b"]
+    assert r["series"]["devices"]["sensor.geraet_b"][0][2] == pytest.approx(12.0)
+    assert r["warnings"] == []
 
 
 async def test_settings_require_admin(

@@ -346,4 +346,4 @@ class EkdSettings extends LitElement {
   `;
 }
 
-customElements.define("ekd-settings", EkdSettings);
+if (!customElements.get("ekd-settings")) customElements.define("ekd-settings", EkdSettings);

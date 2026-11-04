@@ -59,4 +59,4 @@ class EnergiekostenPanel extends LitElement {
   `;
 }
 
-customElements.define("energiekosten-panel", EnergiekostenPanel);
+if (!customElements.get("energiekosten-panel")) customElements.define("energiekosten-panel", EnergiekostenPanel);
