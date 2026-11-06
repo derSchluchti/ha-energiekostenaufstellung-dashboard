@@ -18,6 +18,7 @@ from .devices import (
     grid_stat_from_prefs,
 )
 from .report import async_build_report
+from .sensor_setup import async_rebuild_sensors
 from .store import SettingsError, SettingsStore
 
 
@@ -108,3 +109,5 @@ async def ws_save_settings(
         connection.send_error(msg["id"], "invalid_settings", str(err))
         return
     connection.send_result(msg["id"], {"settings": saved})
+    # Sensoren mit den neuen Einstellungen (Tarif, Geräteliste) neu aufbauen
+    await async_rebuild_sensors(hass)

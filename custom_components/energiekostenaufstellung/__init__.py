@@ -21,6 +21,8 @@ from .const import (
     PANEL_URL_PATH,
     STATIC_URL,
 )
+from .coordinator import EnergiekostenCoordinator
+from .sensor_setup import PLATFORMS
 from .store import SettingsStore
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
@@ -66,10 +68,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         require_admin=False,
         config={},
     )
+
+    coordinator = EnergiekostenCoordinator(hass, entry, store)
+    await coordinator.async_config_entry_first_refresh()
+    entry.runtime_data = coordinator
+    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    frontend.async_remove_panel(hass, PANEL_URL_PATH, warn_if_unknown=False)
-    hass.data.pop(DOMAIN, None)
-    return True
+    unloaded = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    if unloaded:
+        frontend.async_remove_panel(hass, PANEL_URL_PATH, warn_if_unknown=False)
+        hass.data.pop(DOMAIN, None)
+    return unloaded

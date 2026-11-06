@@ -42,6 +42,21 @@ gross: true          # optional, sonst Standard aus den Einstellungen
 name: Kaffee         # optional
 ```
 
+## Sensoren
+
+Ab Version 0.3.0 legt die Integration ein Gerät „Energiekosten“ mit diesen Sensoren an (alle brutto in EUR, alle 5 Minuten neu berechnet, das Jahr alle 30 Minuten):
+
+| Entity | Inhalt |
+|---|---|
+| `sensor.energiekosten_kosten_heute` | Kosten seit Mitternacht inkl. Fixkosten-Anteil |
+| `sensor.energiekosten_kosten_monat` | Kosten im laufenden Monat inkl. Fixkosten-Anteil |
+| `sensor.energiekosten_kosten_jahr` | Kosten im laufenden Jahr inkl. Fixkosten-Anteil |
+| `sensor.energiekosten_hochrechnung_monat` | lineare Hochrechnung auf den ganzen Monat |
+| `sensor.energiekosten_hochrechnung_jahr` | lineare Hochrechnung auf das ganze Jahr |
+| `sensor.energiekosten_kosten_monat_<gerät>` | variable Kosten je Gerät im laufenden Monat |
+
+Die drei Zeitraum-Sensoren haben zusätzlich die Attribute `netto`, `kwh`, `variabel_brutto`, `fix_brutto`, `hochrechnung_brutto`, `nicht_erfasst_brutto`, `nicht_erfasst_kwh`, `geraete` (Liste, teuerstes zuerst) und `anzeige` (fertiger Text mit den teuersten Geräten, z. B. für ein ESPHome-Display). Nach dem Speichern der Einstellungen im Panel werden die Sensoren automatisch neu aufgebaut, neue Geräte bekommen dabei ihren eigenen Sensor.
+
 ## Voraussetzungen
 
 - Home Assistant 2026.1 oder neuer

@@ -15,6 +15,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.setup import async_setup_component
 
 from custom_components.energiekostenaufstellung.const import DOMAIN, PANEL_URL_PATH
+from custom_components.energiekostenaufstellung.sensor_setup import async_rebuild_sensors
 
 TARIFF = {
     "versions": [
@@ -203,3 +204,65 @@ async def test_invalid_tariff_rejected(hass: HomeAssistant, setup_integration, h
     msg = await client.receive_json()
     assert not msg["success"]
     assert msg["error"]["code"] == "invalid_settings"
+
+
+async def test_cost_sensors(hass: HomeAssistant, freezer):
+    """Sensoren: heute/Monat inkl. Fixkosten-Anteil, je Gerät, Hochrechnung."""
+    await hass.config.async_update(time_zone="Europe/Vienna")
+    # 02.11.2026 12:00 Wien = 11:00 UTC
+    freezer.move_to(datetime(2026, 11, 2, 11, 0, tzinfo=timezone.utc))
+    assert await async_setup_component(hass, "energy", {})
+    manager = await async_get_manager(hass)
+    await manager.async_update(
+        {
+            "energy_sources": [
+                {
+                    "type": "grid",
+                    "flow_from": [
+                        {
+                            "stat_energy_from": "sensor.netz",
+                            "stat_cost": None,
+                            "entity_energy_price": None,
+                            "number_energy_price": None,
+                        }
+                    ],
+                    "flow_to": [],
+                    "cost_adjustment_day": 0.0,
+                }
+            ],
+            "device_consumption": [{"stat_consumption": "sensor.geraet_a", "name": "Gerät A"}],
+        }
+    )
+    # ab 01.11. 23:00 Wien stündlich: Netz 3 kWh, A 1 kWh
+    first = datetime(2026, 11, 1, 22, tzinfo=timezone.utc)
+    _import(hass, "sensor.netz", first, 13, 3.0)
+    _import(hass, "sensor.geraet_a", first, 13, 1.0)
+    await async_wait_recording_done(hass)
+
+    entry = MockConfigEntry(domain=DOMAIN, data={}, title="Energiekosten")
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    # wie save_settings im Panel (Websocket-Token passt nicht zur eingefrorenen Uhr)
+    await hass.data[DOMAIN].async_save({"tariff": TARIFF})
+    await async_rebuild_sensors(hass)
+    await hass.async_block_till_done()
+
+    # heute: 12 h x 3 kWh x 0,16 € netto x 1,2 + halber Tag Zählermiete (0,05 netto)
+    today = hass.states.get("sensor.energiekosten_kosten_heute")
+    assert float(today.state) == pytest.approx(36 * 0.16 * 1.2 + 0.06, abs=0.01)
+    assert today.attributes["kwh"] == pytest.approx(36.0)
+    assert today.attributes["geraete"][0]["name"] == "Gerät A"
+    assert "Gerät A: 2,30 €" in today.attributes["anzeige"]
+    assert "Nicht erfasst: 4,61 €" in today.attributes["anzeige"]
+
+    # Monat: 13 h (inkl. 01.11. 23:00)
+    month = hass.states.get("sensor.energiekosten_kosten_monat")
+    assert month.attributes["kwh"] == pytest.approx(39.0)
+    dev = hass.states.get("sensor.energiekosten_kosten_monat_gerat_a")
+    assert float(dev.state) == pytest.approx(13 * 0.16 * 1.2, abs=0.01)
+
+    proj = hass.states.get("sensor.energiekosten_hochrechnung_monat")
+    assert float(proj.state) > float(month.state)
+    assert hass.states.get("sensor.energiekosten_hochrechnung_jahr") is not None
