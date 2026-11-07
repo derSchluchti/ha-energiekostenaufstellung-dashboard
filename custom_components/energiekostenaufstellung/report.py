@@ -32,9 +32,11 @@ async def async_hourly_changes(
         return {sid: [] for sid in stat_ids}
     recorder = get_instance(hass)
     hourly = await recorder.async_add_executor_job(
-        statistics_during_period, hass, start, end, stat_ids, "hour", UNITS, {"change"}
+        statistics_during_period,
+        hass, start, end, stat_ids, "hour", UNITS, {"change", "sum"},
     )
     result: dict[str, list[tuple[datetime, float]]] = {sid: [] for sid in stat_ids}
+    last_sum: dict[str, float] = {}
     last_hour_end = start
     for sid, rows in hourly.items():
         for row in rows:
@@ -43,16 +45,29 @@ async def async_hourly_changes(
             last_hour_end = max(last_hour_end, row_start + HOUR)
             if change is not None:
                 result[sid].append((row_start, float(change)))
+            if row.get("sum") is not None:
+                last_sum[sid] = float(row["sum"])
 
     if last_hour_end < end:
         short = await recorder.async_add_executor_job(
             statistics_during_period,
-            hass, last_hour_end, end, stat_ids, "5minute", UNITS, {"change"},
+            hass, last_hour_end, end, stat_ids, "5minute", UNITS, {"change", "sum"},
         )
         for sid, rows in short.items():
             buckets: dict[datetime, float] = defaultdict(float)
+            prev = last_sum.get(sid)
             for row in rows:
-                change = row.get("change")
+                row_sum = row.get("sum")
+                # Verbrauch aus der Differenz zur letzten Summe (Stundenwert bzw.
+                # vorherige 5-Minuten-Zeile). Das Feld "change" der ersten
+                # 5-Minuten-Zeile ist bei neuen oder nachträglich importierten
+                # Statistiken die komplette Summe und daher unbrauchbar.
+                if prev is not None and row_sum is not None:
+                    change = float(row_sum) - prev
+                else:
+                    change = row.get("change")
+                if row_sum is not None:
+                    prev = float(row_sum)
                 if change is None:
                     continue
                 row_start = datetime.fromtimestamp(row["start"], timezone.utc)
